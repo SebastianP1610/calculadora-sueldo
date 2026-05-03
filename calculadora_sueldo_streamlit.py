@@ -346,7 +346,7 @@ def main():
                         "Estado",
                         options=[True, False],
                         format_func=lambda x: "Trabajo" if x else "Descanso",
-                        value=state["working"],
+                        index=0 if state["working"] else 1,
                         key=f"radio_{d}",
                         label_visibility="collapsed"
                     )
