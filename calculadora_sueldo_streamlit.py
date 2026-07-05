@@ -2,17 +2,17 @@
 """
 Calculadora de Extras Quincenal - Colombia (Streamlit)
 Calcula los recargos extras (nocturnas y dominicales/festivos) sobre un
-sueldo base fijo de $929.964 quincenal.
+sueldo base quincenal editable.
 
-Sueldo base quincenal: $929.964 (siempre fijo)
-
-Tarifas de extras (COP por hora):
+Tarifas de extras (COP por hora) — valores por defecto:
   - Hora Nocturna Normal:      $10.700  (días ordinarios, a partir 19:00 h)
   - Hora Diurna Dominical:     $14.300  (domingos y festivos)
   - Hora Nocturna Dominical:   $17.100  (domingos y festivos, a partir 19:00 h)
 
 Las horas diurnas normales están cubiertas por el sueldo base y no generan
 recargo adicional.
+
+Todos los valores monetarios son editables desde el panel de configuración.
 
 Festivos Colombia 2026 incluidos.
 """
@@ -21,68 +21,82 @@ import streamlit as st
 from datetime import date
 import calendar as cal_module
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 #  CONFIGURACIÓN DE PÁGINA
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
     page_title="Calculadora de Sueldo Quincenal — Colombia",
     page_icon="💼",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  CONSTANTES
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CONSTANTES (valores por defecto — no se usan directamente en el cálculo)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-RATES: dict[str, int] = {
-    "diurna_normal":      7_950,
-    "nocturna_normal":   10_700,
-    "diurna_dominical":  14_300,
+DEFAULT_RATES: dict[str, int] = {
+    "diurna_normal": 7_950,
+    "nocturna_normal": 10_700,
+    "diurna_dominical": 14_300,
     "nocturna_dominical": 17_100,
 }
 
-SUELDO_BASE = 929_964  # Sueldo base quincenal fijo (COP)
+DEFAULT_SUELDO_BASE = 929_964
 
-NIGHT_START = 19  # Las horas nocturnas empiezan a las 19:00 h (7 PM)
+NIGHT_START = 19
+
+HOUR_OPTIONS = [f"{h:02d}:00" for h in range(24)]
+
+HOUR_DICT = {f"{h:02d}:00": float(h) for h in range(24)}
 
 DAYS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 MONTHS_ES = [
-    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
 ]
 
-GRID_COLS = 5  # Número de columnas en la grilla de días
+GRID_COLS = 5
 
 # Festivos Colombia 2026
 HOLIDAYS_2026: set[date] = {
-    date(2026,  1,  1),   # Año Nuevo (fijo)
-    date(2026,  1, 12),   # Reyes Magos (lunes siguiente al 6-ene, que cae martes)
-    date(2026,  3, 23),   # San José (lunes siguiente al 19-mar, que cae jueves)
-    date(2026,  4,  2),   # Jueves Santo
-    date(2026,  4,  3),   # Viernes Santo
-    date(2026,  5,  1),   # Día del Trabajo (fijo)
-    date(2026,  5, 18),   # Ascensión del Señor (lunes, 39 días después de Pascua)
-    date(2026,  6,  8),   # Corpus Christi (lunes, 60 días después de Pascua)
-    date(2026,  6, 15),   # Sagrado Corazón (lunes, 68 días después de Pascua)
-    date(2026,  6, 29),   # San Pedro y San Pablo (fijo 29-jun; en 2026 cae lunes)
-    date(2026,  7, 20),   # Independencia de Colombia (fijo)
-    date(2026,  8,  7),   # Batalla de Boyacá (fijo)
-    date(2026,  8, 17),   # Asunción de la Virgen (lunes siguiente al 15-ago, que cae sábado)
-    date(2026, 10, 12),   # Día de la Raza (fijo 12-oct; en 2026 cae lunes)
-    date(2026, 11,  2),   # Todos los Santos (lunes siguiente al 1-nov, que cae domingo)
-    date(2026, 11, 16),   # Independencia de Cartagena (lunes siguiente al 11-nov, que cae miércoles)
-    date(2026, 12,  8),   # Inmaculada Concepción (fijo)
-    date(2026, 12, 25),   # Navidad (fijo)
+    date(2026, 1, 1),
+    date(2026, 1, 12),
+    date(2026, 3, 23),
+    date(2026, 4, 2),
+    date(2026, 4, 3),
+    date(2026, 5, 1),
+    date(2026, 5, 18),
+    date(2026, 6, 8),
+    date(2026, 6, 15),
+    date(2026, 6, 29),
+    date(2026, 7, 20),
+    date(2026, 8, 7),
+    date(2026, 8, 17),
+    date(2026, 10, 12),
+    date(2026, 11, 2),
+    date(2026, 11, 16),
+    date(2026, 12, 8),
+    date(2026, 12, 25),
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  LÓGICA DE CÁLCULO (sin cambios)
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LÓGICA DE CÁLCULO
+# ═══════════════════════════════════════════════════════════════════════════════
+
 
 def quincena_dates(year: int, month: int, first: bool) -> list[date]:
-    """Retorna la lista de fechas que componen la quincena indicada."""
     if first:
         return [date(year, month, d) for d in range(1, 16)]
     last = cal_module.monthrange(year, month)[1]
@@ -98,52 +112,46 @@ def parse_hhmm(text: str) -> float:
     try:
         h, m = int(parts[0]), int(parts[1])
     except ValueError:
-        raise ValueError(f"Formato inválido '{text}' — los valores deben ser numéricos (ej: 08:00)")
+        raise ValueError(
+            f"Formato inválido '{text}' — los valores deben ser numéricos (ej: 08:00)"
+        )
     if not (0 <= h <= 23 and 0 <= m <= 59):
         raise ValueError(f"Hora fuera de rango '{text}' — horas 0–23, minutos 0–59")
     return h + m / 60.0
 
 
-def shift_breakdown(start: float, end: float, is_sunday: bool) -> dict[str, float]:
-    """
-    Calcula las horas diurnas y nocturnas de un turno.
-
-    Parámetros:
-        start  — hora de entrada en formato decimal (ej: 8.5 = 08:30)
-        end    — hora de salida en formato decimal. Si end < start, el turno
-                 cruza la medianoche (turno nocturno).
-        is_sunday — True si el día es domingo (aplican tarifas dominicales).
-
-    Retorna un dict con las horas acumuladas por tipo de tarifa.
-    """
-
+def shift_breakdown(
+    start: float, end: float, is_sunday: bool, rates: dict[str, int]
+) -> dict[str, float]:
     def _split(a: float, b: float) -> tuple[float, float]:
-        """Divide el segmento [a, b) entre horas diurnas y nocturnas."""
         night = float(NIGHT_START)
-        day_h   = max(0.0, min(b, night) - a)
+        day_h = max(0.0, min(b, night) - a)
         night_h = max(0.0, b - max(a, night))
         return day_h, night_h
 
     if end >= start:
         dh, nh = _split(start, end)
     else:
-        # Turno que cruza la medianoche: [start, 24) + [0, end)
         d1, n1 = _split(start, 24.0)
         d2, n2 = _split(0.0, end)
         dh, nh = d1 + d2, n1 + n2
 
-    key_d = "diurna_dominical"   if is_sunday else "diurna_normal"
+    key_d = "diurna_dominical" if is_sunday else "diurna_normal"
     key_n = "nocturna_dominical" if is_sunday else "nocturna_normal"
 
-    result: dict[str, float] = {k: 0.0 for k in RATES}
+    result: dict[str, float] = {k: 0.0 for k in rates}
     result[key_d] = dh
     result[key_n] = nh
     return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 #  INICIALIZACIÓN DE SESIÓN
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if "rates" not in st.session_state:
+    st.session_state.rates = dict(DEFAULT_RATES)
+    st.session_state.sueldo_base = DEFAULT_SUELDO_BASE
 
 if "year" not in st.session_state:
     today = date.today()
@@ -154,12 +162,12 @@ if "year" not in st.session_state:
     st.session_state.summary_visible = False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 #  FUNCIÓN AUXILIAR: INICIALIZAR ESTADO DE DÍAS
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
 
 def initialize_day_state(d: date) -> None:
-    """Asegura que el día tiene estado inicializado en session_state."""
     key = str(d)
     if key not in st.session_state.day_states:
         st.session_state.day_states[key] = {
@@ -170,41 +178,132 @@ def initialize_day_state(d: date) -> None:
 
 
 def get_day_state(d: date) -> dict:
-    """Obtiene el estado de un día."""
     initialize_day_state(d)
     return st.session_state.day_states[str(d)]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 #  INTERFAZ
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
 
 def main():
-    # Título
+    rates = st.session_state.rates
+    sueldo_base = st.session_state.sueldo_base
+
+    # ── Título ──
     st.markdown(
         """
         <h1 style='text-align: center; color: #faa61a;'>💼 Calculadora de Sueldo Quincenal</h1>
         <p style='text-align: center; color: #99aab5; font-size: 14px;'>
-        🇨🇴 Extras: nocturnas y dominicales/festivos · Base fija: $929.964 · Nocturnas desde las 19:00 h · Formato: HH:MM
+        🇨🇴 Extras: nocturnas y dominicales/festivos · Base y tarifas editables · Nocturnas desde las 19:00 h
         </p>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    # Rate chips
+    # ── Rate chips (ahora reflejan los valores en sesión) ──
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("💼 Sueldo Base", f"${SUELDO_BASE:,}", "quincenal (fijo)")
+        st.metric("💼 Sueldo Base", f"${sueldo_base:,}", "quincenal")
     with col2:
-        st.metric("🌙 Nocturna Normal", f"${RATES['nocturna_normal']:,}/h", "días ordinarios")
+        st.metric(
+            "🌙 Nocturna Normal", f"${rates['nocturna_normal']:,}/h", "días ordinarios"
+        )
     with col3:
-        st.metric("☀ Diurna Dominical", f"${RATES['diurna_dominical']:,}/h", "domingos/festivos")
+        st.metric(
+            "☀ Diurna Dominical",
+            f"${rates['diurna_dominical']:,}/h",
+            "domingos/festivos",
+        )
     with col4:
-        st.metric("🌙 Nocturna Dominical", f"${RATES['nocturna_dominical']:,}/h", "domingos/festivos")
+        st.metric(
+            "🌙 Nocturna Dominical",
+            f"${rates['nocturna_dominical']:,}/h",
+            "domingos/festivos",
+        )
 
     st.divider()
 
-    # Navegación de período
+    # ── Panel de configuración de tarifas ──
+    with st.expander("⚙️ Configuración de Tarifas", expanded=False):
+        st.caption(
+            "Modificá los valores y los cálculos se actualizarán automáticamente."
+        )
+
+        col_a, col_b, col_c, col_d, col_e = st.columns(5)
+        with col_a:
+            nuevo_sueldo = st.number_input(
+                "Sueldo Base Quincenal",
+                min_value=0,
+                value=sueldo_base,
+                step=1000,
+                key="cfg_sueldo_base",
+                format="%d",
+            )
+            st.session_state.sueldo_base = int(nuevo_sueldo)
+
+        with col_b:
+            nuevo_rn = st.number_input(
+                "Nocturna Normal ($/h)",
+                min_value=0,
+                value=rates["nocturna_normal"],
+                step=100,
+                key="cfg_nocturna_normal",
+                format="%d",
+            )
+            st.session_state.rates["nocturna_normal"] = int(nuevo_rn)
+
+        with col_c:
+            nuevo_rd = st.number_input(
+                "Diurna Dominical ($/h)",
+                min_value=0,
+                value=rates["diurna_dominical"],
+                step=100,
+                key="cfg_diurna_dominical",
+                format="%d",
+            )
+            st.session_state.rates["diurna_dominical"] = int(nuevo_rd)
+
+        with col_d:
+            nuevo_rnd = st.number_input(
+                "Nocturna Dominical ($/h)",
+                min_value=0,
+                value=rates["nocturna_dominical"],
+                step=100,
+                key="cfg_nocturna_dominical",
+                format="%d",
+            )
+            st.session_state.rates["nocturna_dominical"] = int(nuevo_rnd)
+
+        with col_e:
+            nuevo_dn = st.number_input(
+                "Diurna Normal ($/h)",
+                min_value=0,
+                value=rates["diurna_normal"],
+                step=100,
+                key="cfg_diurna_normal",
+                format="%d",
+                help="No genera recargo extra; solo informativo.",
+            )
+            st.session_state.rates["diurna_normal"] = int(nuevo_dn)
+
+        if st.button("↺ Restaurar Valores por Defecto", key="btn_reset_config"):
+            st.session_state.rates = dict(DEFAULT_RATES)
+            st.session_state.sueldo_base = DEFAULT_SUELDO_BASE
+            st.rerun()
+
+        st.caption(
+            "Las horas diurnas normales están cubiertas por el sueldo base y no generan recargo adicional."
+        )
+
+    st.divider()
+
+    # Recargar por si se editaron
+    rates = st.session_state.rates
+    sueldo_base = st.session_state.sueldo_base
+
+    # ── Navegación de período ──
     col_prev, col_period, col_next = st.columns([1, 3, 1])
 
     with col_prev:
@@ -225,7 +324,7 @@ def main():
         m = MONTHS_ES[st.session_state.month - 1]
         st.markdown(
             f"<h3 style='text-align: center;'>{m} {st.session_state.year} — {q} Quincena</h3>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
     with col_next:
@@ -243,25 +342,33 @@ def main():
 
     st.divider()
 
-    # Acciones masivas
+    # ── Acciones masivas ──
     st.subheader("⚡ Acciones Masivas")
-    col_btn1, col_btn2, col_sep, col_label, col_start, col_arrow, col_end, col_apply = st.columns(
-        [1, 1, 0.5, 1.5, 1, 0.3, 1, 1.5]
+    col_btn1, col_btn2, col_sep, col_label, col_start, col_arrow, col_end, col_apply = (
+        st.columns([1, 1, 0.5, 1.5, 1, 0.3, 1, 1.5])
     )
 
     with col_btn1:
         if st.button("✔ Trabajo", use_container_width=True, key="btn_all_work"):
-            for d in quincena_dates(st.session_state.year, st.session_state.month, st.session_state.first):
+            for d in quincena_dates(
+                st.session_state.year, st.session_state.month, st.session_state.first
+            ):
                 st.session_state.day_states[str(d)] = {
                     "working": True,
-                    "start": st.session_state.day_states.get(str(d), {}).get("start", "08:00"),
-                    "end": st.session_state.day_states.get(str(d), {}).get("end", "17:00"),
+                    "start": st.session_state.day_states.get(str(d), {}).get(
+                        "start", "08:00"
+                    ),
+                    "end": st.session_state.day_states.get(str(d), {}).get(
+                        "end", "17:00"
+                    ),
                 }
             st.rerun()
 
     with col_btn2:
         if st.button("✖ Descanso", use_container_width=True, key="btn_all_rest"):
-            for d in quincena_dates(st.session_state.year, st.session_state.month, st.session_state.first):
+            for d in quincena_dates(
+                st.session_state.year, st.session_state.month, st.session_state.first
+            ):
                 st.session_state.day_states[str(d)] = {
                     "working": False,
                     "start": "08:00",
@@ -273,40 +380,53 @@ def main():
         st.write("Horario masivo:")
 
     with col_start:
-        bulk_start = st.text_input("Entrada", value="08:00", key="bulk_start_input", label_visibility="collapsed")
+        bulk_start = st.selectbox(
+            "Entrada",
+            options=HOUR_OPTIONS,
+            index=8,  # 08:00
+            key="bulk_start_input",
+            label_visibility="collapsed",
+        )
 
     with col_arrow:
         st.write("→")
 
     with col_end:
-        bulk_end = st.text_input("Salida", value="17:00", key="bulk_end_input", label_visibility="collapsed")
+        bulk_end = st.selectbox(
+            "Salida",
+            options=HOUR_OPTIONS,
+            index=17,  # 17:00
+            key="bulk_end_input",
+            label_visibility="collapsed",
+        )
 
     with col_apply:
         if st.button("Aplicar", key="btn_apply_bulk", use_container_width=True):
-            try:
-                s_dec = parse_hhmm(bulk_start)
-                e_dec = parse_hhmm(bulk_end)
-                if e_dec < s_dec:
-                    confirm = st.warning(
-                        f"La salida ({bulk_end}) es anterior a la entrada ({bulk_start}). "
-                        "¿Es un turno que cruza la medianoche?",
-                        icon="⚠️"
-                    )
-                for d in quincena_dates(st.session_state.year, st.session_state.month, st.session_state.first):
-                    state = get_day_state(d)
-                    if state["working"]:
-                        state["start"] = bulk_start
-                        state["end"] = bulk_end
-                st.rerun()
-            except ValueError as err:
-                st.error(f"Error en horario masivo: {err}")
+            e_dec = HOUR_DICT[bulk_end]
+            s_dec = HOUR_DICT[bulk_start]
+            if e_dec < s_dec:
+                st.warning(
+                    f"La salida ({bulk_end}) es anterior a la entrada ({bulk_start}). "
+                    "¿Es un turno que cruza la medianoche?",
+                    icon="⚠️",
+                )
+            for d in quincena_dates(
+                st.session_state.year, st.session_state.month, st.session_state.first
+            ):
+                state = get_day_state(d)
+                if state["working"]:
+                    state["start"] = bulk_start
+                    state["end"] = bulk_end
+            st.rerun()
 
     st.divider()
 
-    # Grilla de días
+    # ── Grilla de días ──
     st.subheader("📅 Días de la Quincena")
 
-    dates = quincena_dates(st.session_state.year, st.session_state.month, st.session_state.first)
+    dates = quincena_dates(
+        st.session_state.year, st.session_state.month, st.session_state.first
+    )
 
     for row_idx in range(0, len(dates), GRID_COLS):
         cols = st.columns(GRID_COLS)
@@ -315,7 +435,7 @@ def main():
             if day_idx < len(dates):
                 d = dates[day_idx]
                 state = get_day_state(d)
-                
+
                 is_sunday = d.weekday() == 6
                 is_holiday = d in HOLIDAYS_2026
                 is_dominical = is_sunday or is_holiday
@@ -338,37 +458,45 @@ def main():
                         <div style='background-color: {card_bg}; padding: 12px; border-radius: 8px; border: 1px solid #ddd;'>
                         <h4 style='margin: 0; color: {hdr_color};'>{d.day} {day_name}{suffix}</h4>
                         """,
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True,
                     )
 
-                    # Selector trabajo/descanso
                     working = st.radio(
                         "Estado",
                         options=[True, False],
                         format_func=lambda x: "Trabajo" if x else "Descanso",
                         index=0 if state["working"] else 1,
                         key=f"radio_{d}",
-                        label_visibility="collapsed"
+                        label_visibility="collapsed",
                     )
                     state["working"] = working
 
-                    # Entradas de hora
                     if working:
                         col_in, col_out = st.columns(2)
                         with col_in:
-                            start_time = st.text_input(
+                            try:
+                                start_idx = HOUR_OPTIONS.index(state["start"])
+                            except ValueError:
+                                start_idx = 8
+                            start_time = st.selectbox(
                                 "Entrada",
-                                value=state["start"],
+                                options=HOUR_OPTIONS,
+                                index=start_idx,
                                 key=f"start_{d}",
-                                label_visibility="collapsed"
+                                label_visibility="collapsed",
                             )
                             state["start"] = start_time
                         with col_out:
-                            end_time = st.text_input(
+                            try:
+                                end_idx = HOUR_OPTIONS.index(state["end"])
+                            except ValueError:
+                                end_idx = 17
+                            end_time = st.selectbox(
                                 "Salida",
-                                value=state["end"],
+                                options=HOUR_OPTIONS,
+                                index=end_idx,
                                 key=f"end_{d}",
-                                label_visibility="collapsed"
+                                label_visibility="collapsed",
                             )
                             state["end"] = end_time
                     else:
@@ -378,50 +506,53 @@ def main():
 
     st.divider()
 
-    # Botón calcular
+    # ── Botón calcular ──
     col_calc = st.columns([1, 3, 1])[1]
     with col_calc:
-        if st.button("💰 Calcular Quincena", use_container_width=True, key="btn_calculate"):
+        if st.button(
+            "💰 Calcular Quincena", use_container_width=True, key="btn_calculate"
+        ):
             st.session_state.summary_visible = True
             st.rerun()
 
-    # Resumen y cálculo
+    # ── Resumen y cálculo ──
     if st.session_state.summary_visible:
         st.divider()
         st.subheader("📊 Resumen de Cálculo")
 
-        totals: dict[str, float] = {k: 0.0 for k in RATES}
+        totals: dict[str, float] = {k: 0.0 for k in rates}
         errors: list[str] = []
 
         for d in dates:
             state = get_day_state(d)
-            try:
-                if state["working"]:
-                    is_dominical = d.weekday() == 6 or d in HOLIDAYS_2026
-                    start = parse_hhmm(state["start"])
-                    end = parse_hhmm(state["end"])
-                    bd = shift_breakdown(start, end, is_dominical)
-                    for k in RATES:
-                        totals[k] += bd[k]
-                else:
-                    bd = {k: 0.0 for k in RATES}
-            except ValueError as err:
-                errors.append(f"Día {d.day}: {err}")
+            if state["working"]:
+                is_dominical = d.weekday() == 6 or d in HOLIDAYS_2026
+                start = HOUR_DICT.get(state["start"])
+                end = HOUR_DICT.get(state["end"])
+                if start is None or end is None:
+                    errors.append(
+                        f"Día {d.day}: formato de hora inválido ({state['start']} / {state['end']})"
+                    )
+                    continue
+                bd = shift_breakdown(start, end, is_dominical, rates)
+                for k in rates:
+                    totals[k] += bd[k]
+            else:
+                bd = {k: 0.0 for k in rates}
 
         if errors:
             st.error("Errores de entrada:\n" + "\n".join(errors))
         else:
-            # Mostrar resumen
             col_label, col_value = st.columns([2, 2])
 
             with col_label:
                 st.markdown("**💼 Sueldo Base**")
             with col_value:
-                st.markdown(f"**${SUELDO_BASE:,}** (fijo quincenal)")
+                st.markdown(f"**${sueldo_base:,}**")
 
             for key in ("nocturna_normal", "diurna_dominical", "nocturna_dominical"):
                 hrs = totals[key]
-                pay = hrs * RATES[key]
+                pay = hrs * rates[key]
                 labels = {
                     "nocturna_normal": "🌙 Nocturna Normal",
                     "diurna_dominical": "☀ Diurna Dominical",
@@ -434,9 +565,11 @@ def main():
 
             st.divider()
 
-            # Total
-            extras_total = sum(totals[k] * RATES[k] for k in ("nocturna_normal", "diurna_dominical", "nocturna_dominical"))
-            total = SUELDO_BASE + extras_total
+            extras_total = sum(
+                totals[k] * rates[k]
+                for k in ("nocturna_normal", "diurna_dominical", "nocturna_dominical")
+            )
+            total = sueldo_base + extras_total
 
             col_total_label, col_total_value = st.columns([2, 2])
             with col_total_label:
